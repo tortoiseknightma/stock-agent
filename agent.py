@@ -53,6 +53,7 @@ from analysis.composite.composite import CompositeAnalyzer, CompositeSignal
 from execution.risk_engine import RiskEngine
 from execution.executor import TradeExecutor
 from push.notifier import Notifier, Notification
+from core.llm import create_llm_client, BaseLLMClient
 
 
 class StockAgentAgent:
@@ -92,7 +93,11 @@ class StockAgentAgent:
         self.fundamental_analyzer = FundamentalAnalyzer()
         self.sentiment = SentimentAnalyzer()
         self.composite = CompositeAnalyzer(config.analysis)
-        
+
+        # LLM client (lazy-init, None if not configured)
+        self.llm: Optional[BaseLLMClient] = None
+        self._init_llm()
+
         # Execution
         self.risk = RiskEngine(config.risk, self.broker)
         self.executor = TradeExecutor(config, self.broker, self.risk, self.journal)
@@ -109,7 +114,22 @@ class StockAgentAgent:
         """Create agent from configuration file."""
         config = load_config(config_path)
         return cls(config)
-    
+
+    def _init_llm(self):
+        """Initialize LLM client if API key is available."""
+        try:
+            self.llm = create_llm_client(
+                provider=self.config.llm.provider,
+                model=self.config.llm.model,
+                base_url=self.config.llm.base_url,
+            )
+        except Exception:
+            self.llm = None  # Graceful fallback: agent works without LLM
+
+    def get_llm(self) -> Optional[BaseLLMClient]:
+        """Get LLM client, or None if not available."""
+        return self.llm
+
     def connect(self) -> bool:
         """Connect to broker."""
         success = self.broker.connect()

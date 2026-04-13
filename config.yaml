@@ -76,3 +76,11 @@ push:
   feishu_webhook: null
   telegram_bot_token: null
   telegram_chat_id: null
+
+llm:
+  provider: openai          # openai | anthropic | google | deepseek | qwen | glm | xai | ollama | openrouter
+  model: gpt-4o             # Model for analysis tasks
+  reasoning_model: gpt-4o   # Model for complex reasoning (debate, reflection)
+  base_url: null            # Custom API endpoint (optional)
+  temperature: 0.0
+  max_tokens: 4096

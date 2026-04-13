@@ -99,6 +99,17 @@ class MemoryConfig:
 
 
 @dataclass
+class LLMConfig:
+    """LLM provider configuration."""
+    provider: str = "openai"         # openai, anthropic, google, deepseek, qwen, glm, xai, ollama, openrouter
+    model: str = "gpt-4o"            # Model for analysis tasks
+    reasoning_model: str = "gpt-4o"  # Model for complex reasoning (debate, reflection)
+    base_url: Optional[str] = None   # Custom API endpoint
+    temperature: float = 0.0
+    max_tokens: int = 4096
+
+
+@dataclass
 class PushConfig:
     channels: list = field(default_factory=lambda: ["cli"])
     feishu_webhook: Optional[str] = None
@@ -117,6 +128,7 @@ class AppConfig:
     analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
     push: PushConfig = field(default_factory=PushConfig)
     
     @classmethod
@@ -162,7 +174,17 @@ class AppConfig:
             if tg_token:
                 overrides["push"]["telegram_bot_token"] = tg_token
                 overrides["push"]["telegram_chat_id"] = os.getenv("STOCKAGENT_TELEGRAM_CHAT_ID")
-        
+
+        # LLM overrides
+        llm_provider = os.getenv("STOCKAGENT_LLM_PROVIDER")
+        llm_model = os.getenv("STOCKAGENT_LLM_MODEL")
+        if llm_provider or llm_model:
+            overrides.setdefault("llm", {})
+            if llm_provider:
+                overrides["llm"]["provider"] = llm_provider
+            if llm_model:
+                overrides["llm"]["model"] = llm_model
+
         return overrides
     
     @staticmethod
@@ -199,6 +221,7 @@ class AppConfig:
             analysis=_dc_from_dict(AnalysisConfig, raw.get("analysis")),
             scheduler=_dc_from_dict(SchedulerConfig, raw.get("scheduler")),
             memory=_dc_from_dict(MemoryConfig, raw.get("memory")),
+            llm=_dc_from_dict(LLMConfig, raw.get("llm")),
             push=_dc_from_dict(PushConfig, raw.get("push")),
         )
     
