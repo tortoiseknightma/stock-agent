@@ -21,6 +21,12 @@ Commands:
 import sys
 import json
 import argparse
+
+# Windows terminals default to GBK; reconfigure to UTF-8 so emoji display correctly.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from datetime import datetime
 from pathlib import Path
 
