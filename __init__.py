@@ -8,8 +8,11 @@ Supports IBKR (Interactive Brokers) for live/paper trading and includes
 a simulated broker for development and backtesting.
 """
 
-from .agent import StockAgentAgent
-from .core.config import AppConfig, TradingMode, load_config
+try:
+    from .agent import StockAgentAgent
+    from .core.config import AppConfig, TradingMode, load_config
+except ImportError:
+    pass
 
 __version__ = "0.1.0"
 __all__ = ["StockAgentAgent", "AppConfig", "TradingMode", "load_config"]
