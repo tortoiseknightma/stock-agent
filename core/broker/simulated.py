@@ -89,7 +89,17 @@ class SimulatedBroker(BaseBroker):
                 self._cash -= qty * price
                 self._current_prices[ticker] = price
                 self._price_history[ticker] = [price] * 30  # 30-day history
-        
+
+            # Guard: if portfolio cost exceeds initial_capital, adjust so cash >= 0.
+            # This keeps accounting consistent regardless of price changes.
+            if self._cash < 0:
+                shortfall = -self._cash
+                print(f"Warning: default portfolio costs ${initial_capital - self._cash:,.0f} "
+                      f"but initial_capital is ${initial_capital:,.0f}. "
+                      f"Adjusting initial_capital by ${shortfall:,.0f} to avoid negative cash.")
+                self.initial_capital += shortfall
+                self._cash = 0.0
+
         # Try to load saved state
         self._load_state()
     

@@ -12,7 +12,7 @@ ibkr:
   readonly: true
 
 simulated:
-  initial_capital: 100000.0
+  initial_capital: 150000.0
   default_portfolio:
     AAPL: 100
     MSFT: 50
