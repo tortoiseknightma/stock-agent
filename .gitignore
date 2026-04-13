@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# StockAgent runtime data
+data/sim_state.json
+data/memory.db
+data/trade_journal.db
+data/research_corpus/
+data/market_data/
+data/news/
+
+# Reports (regenerable)
+reports/daily/
+reports/weekly/
+reports/*.log
+
+# Logs
+logs/
+*.log
+
+# Config with secrets (don't commit real credentials)
+# config.yaml is safe to commit as it contains no secrets
+# Use environment variables for API keys and tokens
+
+# Jupyter
+.ipynb_checkpoints/

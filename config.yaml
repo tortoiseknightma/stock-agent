@@ -1,0 +1,78 @@
+# StockAgent Configuration
+# ======================
+# Environment variables with STOCKAGENT_ prefix override these values.
+
+trading_mode: simulated  # simulated | paper | advisory | live
+
+ibkr:
+  host: "127.0.0.1"
+  port: 7497              # 7497=paper, 7496=live
+  client_id: 1
+  timeout: 30
+  readonly: true
+
+simulated:
+  initial_capital: 100000.0
+  default_portfolio:
+    AAPL: 100
+    MSFT: 50
+    GOOGL: 30
+    NVDA: 40
+    AMZN: 25
+    JPM: 40
+    V: 35
+    TSLA: 20
+  slippage_pct: 0.001
+  commission_per_trade: 1.0
+
+risk:
+  max_position_pct: 0.20
+  max_trade_pct: 0.05
+  daily_loss_limit_pct: 0.03
+  stop_loss_pct: 0.08
+  take_profit_pct: 0.20
+  max_trades_per_day: 10
+  large_trade_threshold: 5000.0
+  var_confidence: 0.95
+  max_drawdown_pct: 0.15
+
+analysis:
+  ma_short_period: 20
+  ma_long_period: 50
+  rsi_period: 14
+  rsi_overbought: 70.0
+  rsi_oversold: 30.0
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  bollinger_period: 20
+  bollinger_std: 2.0
+  weight_technical: 0.35
+  weight_fundamental: 0.35
+  weight_sentiment: 0.15
+  weight_momentum: 0.15
+  strong_buy_threshold: 0.7
+  buy_threshold: 0.4
+  sell_threshold: -0.4
+  strong_sell_threshold: -0.7
+
+scheduler:
+  premarket_time: "09:00"
+  intraday_interval_min: 30
+  postmarket_time: "16:30"
+  weekend_enabled: false
+  timezone: "US/Eastern"
+
+memory:
+  max_session_transcripts: 100
+  max_research_docs: 500
+  max_trade_journal_entries: 1000
+  memory_db_path: "data/memory.db"
+  research_index_path: "data/research_corpus"
+
+push:
+  channels:
+    - cli
+  feishu_webhook: null
+  telegram_bot_token: null
+  telegram_chat_id: null
