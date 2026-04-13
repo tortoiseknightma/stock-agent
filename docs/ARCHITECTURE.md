@@ -1,202 +1,234 @@
-# StockAgent — AI-Powered Investment Agent
+# Architecture
 
-## Architecture Design Document
-
-> **Project Purpose**: A production-grade autonomous stock investment agent that connects to Interactive Brokers, performs multi-dimensional market analysis, manages risk, executes trades, and maintains persistent memory for continuous improvement.
-
-> **Resume Angle**: Demonstrates end-to-end agent architecture design — from broker abstraction and data pipeline to AI-driven analysis, risk management, and memory systems inspired by production agent frameworks.
+Technical documentation for StockAgent's internal architecture.
 
 ---
 
-## 1. Design Philosophy
+## System Overview
 
-### 1.1 Core Principles
+```
+                      CLI / Cron
+                          |
+                    Agent (agent.py)
+                   /    |    |    \
+          Data    Analysis  Execution  Memory
+        Sources    Engine    Layer    System
+            \      |      |      /
+             Broker Abstraction Layer
+                    |      |
+              Simulated  IBKR
+```
 
-StockAgent is designed around three principles that distinguish it from naive trading bots:
-
-1. **Multi-Dimensional Intelligence** — No single indicator tells the whole story. StockAgent combines technical analysis (price patterns), fundamental analysis (financials), and sentiment analysis (news/social) into a composite signal with configurable weights.
-
-2. **Safety-First Execution** — The risk engine is the last line of defense. No trade happens without passing position limits, daily loss limits, buying power checks, and trade size validation. The system defaults to read-only mode.
-
-3. **Persistent Memory** — Inspired by production agent memory architectures, StockAgent maintains three memory tiers that enable the agent to learn from experience and prevent repeated mistakes.
-
-### 1.2 Design Process
-
-Each layer was designed to be:
-- **Testable independently** (each module has clear inputs/outputs)
-- **Replaceable** (swap IBKR for Alpaca by implementing one interface)
-- **Configurable** (all thresholds in YAML, overridable by env vars)
+The agent orchestrates four subsystems through a central coordinator (`agent.py`). Each subsystem is independently testable and replaceable.
 
 ---
 
-## 2. System Architecture
+## Broker Abstraction
+
+All market interaction goes through the `BaseBroker` interface. The rest of the system never touches a specific broker implementation directly.
 
 ```
-                    +---------------------------------------------+
-                    |          StockAgent Agent                    |
-                    |         (agent.py - Orchestrator)           |
-                    +------+------+------+------+----------------+
-                           |      |      |      |
-              +------------+      |      |      +------------+
-              v                   v      v                   v
-     +----------------+  +----------+ +--------------+ +-----------+
-     |  Data Sources  |  | Analysis | |  Execution   | |  Memory   |
-     |                |  |  Engine  | |    Layer     | |  System   |
-     | - Market Data  |  |          | |              | |           |
-     | - News/Sentim. |  | - Techn. | | - Risk Eng.  | | - LTM     |
-     | - Fundamentals |  | - Fundam.| | - Executor   | | - Corpus  |
-     | - SEC Filings  |  | - Sentim.| | - Journal    | | - Journal |
-     +-------+--------+  +----+-----+ +------+-------+ +-----+-----+
-             |                |               |               |
-             +----------------+---------------+---------------+
-                                     |
-                            +--------v--------+
-                            |  Broker Layer   |
-                            |  (Abstract API) |
-                            +-----------------+
-                            | SimulatedBroker | <- Default (mock)
-                            | IBKRBroker      | <- Real trading
-                            +-----------------+
+BaseBroker (ABC)
+  |
+  +-- SimulatedBroker    local mock, GBM prices, persistent state
+  +-- IBKRBroker         real IBKR via ib_insync
+```
+
+**Factory**: `create_broker(config)` returns the right implementation based on `trading_mode`.
+
+### Simulated broker
+
+Uses Geometric Brownian Motion for price simulation:
+
+```
+dS = mu * S * dt + sigma * S * dW
+```
+
+- Configurable drift (default: 5% annual) and per-ticker volatility
+- Realistic bid/ask spread simulation (5 bps)
+- Commission and slippage modeling
+- State persisted to `data/sim_state.json` across sessions
+
+### IBKR broker
+
+Connects to TWS or IB Gateway via `ib_insync`. Supports:
+- Portfolio and position queries
+- Real-time market data
+- Market, limit, and stop orders
+- Historical price data
+
+---
+
+## Memory System
+
+Three tiers, each serving a different purpose:
+
+### Tier 1: Long-term memory
+
+**Purpose**: Prevent the user from having to repeat themselves.
+
+**Storage**: SQLite database.
+
+**Injection**: Entire corpus (capped at ~2KB) is injected into every reasoning turn.
+
+**Categories**:
+| Category | Example | Priority |
+|----------|---------|----------|
+| `user_preference` | "User prefers dividend stocks" | 7-8 |
+| `correction` | "Don't sell NVDA on dips" | 9 |
+| `strategy` | "Always hedge tech with financials" | 7 |
+| `lesson` | "Earnings surprises reverse in 3 days" | 6 |
+| `environment` | "IBKR port 7497 is paper" | 8 |
+
+### Tier 2: Research corpus
+
+**Purpose**: Deep context available on demand without information overload.
+
+**Storage**: SQLite FTS5 + content files.
+
+**Usage**: Agent queries corpus when analyzing specific tickers. Results are NOT injected into memory — they're provided as supplementary context.
+
+**Document types**: research reports, earnings transcripts, SEC filings, news articles, agent-generated analyses.
+
+### Tier 3: Trade journal
+
+**Purpose**: Institutional memory — what was decided, why, and how it turned out.
+
+**Storage**: SQLite.
+
+**Key design**: Every decision is recorded with a full snapshot of what the agent knew at the time (analysis scores, indicators, portfolio state). This enables post-hoc analysis:
+
+```python
+journal.get_decision_accuracy(days=30)
+# → {"correct": 18, "total_evaluated": 25, "accuracy": 0.72}
 ```
 
 ---
 
-## 3. Memory System (Key Innovation)
+## Analysis Engine
 
-The memory system is the most architecturally significant component. It's inspired by how production agents manage persistent context, adapted for financial decision-making.
+Four analyzers produce scores from -1 (bearish) to 1 (bullish). The `CompositeAnalyzer` combines them.
 
-### 3.1 Three-Tier Memory Architecture
+### Technical analyzer
+
+| Indicator | What it measures | Signal logic |
+|-----------|-----------------|--------------|
+| SMA/EMA crossover | Trend direction | Price above/below MAs, golden/death cross |
+| RSI | Overbought/oversold | >70 sell, <30 buy |
+| MACD | Momentum | Signal line crossover, histogram direction |
+| Bollinger Bands | Volatility position | %B within bands |
+| Volume | Confirmation | High volume confirms price direction |
+| Linear regression | Overall trend | Slope direction over 20 periods |
+
+### Fundamental analyzer
+
+Scores four dimensions:
+
+1. **Valuation** — P/E, PEG, P/B relative to sector benchmarks
+2. **Growth** — Revenue and earnings growth rates
+3. **Profitability** — Net margin, ROE, operating margin
+4. **Financial health** — Debt/equity, current ratio
+
+Sector-specific benchmarks adjust scoring (e.g., tech companies are expected to have higher P/E ratios than utilities).
+
+### Sentiment analyzer
+
+- Rule-based NLP scoring on news headlines (positive/negative word matching)
+- Volume-weighted aggregation (recent articles weighted higher)
+- VIX integration (market fear gauge)
+
+### Composite signal
 
 ```
-+--------------------------------------------------------------+
-|                    MEMORY ARCHITECTURE                        |
-+-----------------+------------------+-------------------------+
-|   TIER 1: LTM   |  TIER 2: CORPUS  |  TIER 3: TRADE JOURNAL|
-|  (Injected into |  (Queried on-    |  (Complete decision    |
-|   every turn)   |   demand)        |   history)             |
-+-----------------+------------------+-------------------------+
-| User prefs      | Research reports | Decision records       |
-| Corrections     | Earnings calls   | (what was known)       |
-| Strategies      | SEC filings      | Executed trades        |
-| Lessons learned | Agent analyses   | (outcome tracking)     |
-| Environment     | Industry reports | Performance metrics    |
-| (API quirks)    |                  | Accuracy tracking      |
-+-----------------+------------------+-------------------------+
-| SQLite FTS5     | SQLite + files   | SQLite                 |
-| ~2KB injection  | ~5KB per query   | Unlimited              |
-| Always-on       | On-demand        | Always recording       |
-+-----------------+------------------+-------------------------+
+composite = w1 * technical + w2 * fundamental + w3 * sentiment + w4 * momentum
 ```
 
-### 3.2 Why This Design?
+Default weights: technical 0.35, fundamental 0.35, sentiment 0.15, momentum 0.15.
 
-**Tier 1 (Long-Term Memory)**: Injected into every reasoning turn, capped at ~2KB. This prevents the user from having to repeat preferences and corrections.
-
-**Tier 2 (Research Corpus)**: Indexed but NOT automatically injected. Prevents information overload while keeping deep context accessible.
-
-**Tier 3 (Trade Journal)**: Records every decision with full context — what the agent knew at the time, what it decided, and how it turned out.
+Additional outputs:
+- Signal agreement check (do all analyzers agree?)
+- Confidence score (0-1)
+- Risk level assessment
+- Human-readable recommendation
 
 ---
 
-## 4. Module Details
+## Risk Engine
 
-### 4.1 Configuration (`core/config.py`)
+Pre-trade validation. If any BLOCKER rule fails, the trade does not happen.
 
-Dataclass-based configuration with:
-- YAML file loading
-- Environment variable overrides (prefix: STOCKAGENT_)
-- Type-safe access
-- 4 trading modes: simulated, paper, advisory, live
+| Rule | Default | Type |
+|------|---------|------|
+| Max position concentration | 20% of portfolio | BLOCKER |
+| Max single trade size | 5% of portfolio | BLOCKER |
+| Daily loss limit | 3% of portfolio | BLOCKER |
+| Max trades per day | 10 | BLOCKER |
+| Short selling | Must own shares | BLOCKER |
+| Large trade threshold | $5,000 | WARNING |
+| Stop-loss | 8% below cost basis | Auto-sell |
+| Take-profit | 20% above cost basis | Auto-sell |
+| Max drawdown | 15% | WARNING |
 
-### 4.2 Broker Abstraction (`core/broker/`)
-
-ALL market interaction goes through BaseBroker abstract class. The rest of the system is completely broker-agnostic.
-
-Two implementations:
-- SimulatedBroker: Geometric Brownian Motion price simulation, persistent state
-- IBKRBroker: Real Interactive Brokers via ib_insync
-
-### 4.3 Analysis Engine (`analysis/`)
-
-Four sub-analyzers, each producing a score from -1 to 1:
-
-| Analyzer | Key Indicators | Weight |
-|----------|----------------|--------|
-| Technical | SMA/EMA, RSI, MACD, Bollinger, Volume | 35% |
-| Fundamental | P/E, PEG, margins, ROE, debt/equity | 35% |
-| Sentiment | NLP sentiment, news volume, VIX | 15% |
-| Momentum | Trend slope, relative strength | 15% |
-
-### 4.4 Risk Engine
-
-Pre-trade risk checks:
-- Max position concentration: 20% of portfolio
-- Max single trade size: 5% of portfolio
-- Daily loss limit: 3% of portfolio
-- Max trades per day: 10
-- Stop-loss: 8% below cost
-- Take-profit: 20% above cost
+The engine also calculates risk-adjusted position sizes — if a requested trade exceeds limits, it returns the maximum safe quantity instead of just blocking.
 
 ---
 
-## 5. Technology Stack
+## Data Sources
 
-| Component | Technology | Rationale |
-|-----------|-----------|-----------|
-| Language | Python 3.11+ | Ecosystem for finance + AI |
-| Broker API | ib_insync | Pythonic IBKR wrapper |
-| Market Data | yfinance | Free, reliable, no API key |
-| Database | SQLite + FTS5 | Embedded, zero-config, full-text search |
-| Config | YAML + dataclasses | Human-readable, type-safe |
-| Notifications | HTTP webhooks | Feishu, Telegram, extensible |
+| Source | Provider | Free | Data |
+|--------|----------|------|------|
+| Market data | yfinance | Yes | OHLCV, quotes, company info |
+| News | Yahoo Finance RSS | Yes | Headlines, basic metadata |
+| Fundamentals | yfinance | Yes | Income, balance sheet, cash flow |
+| SEC filings | EDGAR API | Yes | 10-K, 10-Q, 8-K, Form 4 |
+| Enhanced news | Finnhub | Optional (API key) | Company news with full text |
+| Enhanced news | NewsAPI | Optional (API key) | Aggregated news articles |
 
 ---
 
-## 6. Project Structure
+## Trade Execution Flow
 
 ```
-stock-agent/
-├── __init__.py
-├── agent.py                    # Main orchestrator
-├── cli.py                      # CLI entry point
-├── config.yaml                 # Configuration
-├── core/
-│   ├── __init__.py
-│   ├── config.py               # Configuration dataclasses
-│   ├── broker/
-│   │   ├── __init__.py
-│   │   ├── base.py             # Abstract broker interface
-│   │   ├── simulated.py        # Mock broker (GBM prices)
-│   │   ├── ibkr_broker.py      # IBKR via ib_insync
-│   │   └── factory.py          # Broker factory
-│   └── memory/
-│       ├── __init__.py
-│       ├── long_term.py        # Persistent memory (SQLite)
-│       ├── research_corpus.py  # Indexed research (FTS5)
-│       └── trade_journal.py    # Decision & trade history
-├── data/
-│   └── sources/
-│       ├── __init__.py
-│       ├── market_data.py      # Yahoo Finance data
-│       ├── news.py             # News aggregation
-│       ├── fundamentals.py     # Financial ratios
-│       └── sec_filings.py      # SEC EDGAR filings
-├── analysis/
-│   ├── __init__.py
-│   ├── technical/
-│   │   └── technical.py        # Technical indicators
-│   ├── fundamental/
-│   │   └── fundamental.py      # Fundamental scoring
-│   ├── sentiment/
-│   │   └── sentiment.py        # News sentiment
-│   └── composite/
-│       └── composite.py        # Signal combination
-├── execution/
-│   ├── __init__.py
-│   ├── risk_engine.py          # Pre-trade risk checks
-│   └── executor.py             # Trade orchestration
-├── push/
-│   └── notifier.py             # Multi-channel alerts
-└── docs/
-    └── ARCHITECTURE.md         # This document
+Signal from Analysis Engine
+         |
+    Risk Engine check
+    /           \
+  pass          fail
+   |              |
+  Order created  Decision recorded (blocked)
+   |              |
+  Broker.submit  Journal entry
+   |
+  Filled/rejected
+   |
+  Journal + Notification
 ```
+
+Every step is recorded to the trade journal, including blocked trades, so the agent can later analyze what it wanted to do and why it was prevented.
+
+---
+
+## Configuration
+
+Hierarchical: YAML file → environment variables → runtime defaults.
+
+```python
+config = AppConfig.from_yaml("config.yaml")
+# Env vars with STOCKAGENT_ prefix override YAML values
+```
+
+All settings are typed dataclasses with sensible defaults. The system works out of the box with zero configuration.
+
+---
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `yfinance` | Market data and fundamentals |
+| `pandas` | Data manipulation |
+| `pyyaml` | Configuration parsing |
+| `requests` | HTTP for news, SEC, webhooks |
+| `ta` | Technical analysis indicators |
+| `ib_insync` | IBKR integration (optional) |
+| `sqlite3` | Memory system (stdlib) |
