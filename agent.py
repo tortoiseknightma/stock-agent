@@ -50,6 +50,10 @@ from analysis.technical.technical import TechnicalAnalyzer
 from analysis.fundamental.fundamental import FundamentalAnalyzer
 from analysis.sentiment.sentiment import SentimentAnalyzer
 from analysis.composite.composite import CompositeAnalyzer, CompositeSignal
+from analysis.llm.news_analyzer import LLMNewsAnalyzer
+from analysis.llm.thesis_generator import ThesisGenerator
+from analysis.llm.earnings_analyzer import EarningsAnalyzer
+from analysis.llm.risk_assessor import LLMRiskAssessor
 from execution.risk_engine import RiskEngine
 from execution.executor import TradeExecutor
 from push.notifier import Notifier, Notification
@@ -88,15 +92,23 @@ class StockAgentAgent:
         self.news = NewsProvider()
         self.fundamentals = FundamentalsProvider()
         
-        # Analysis
-        self.technical = TechnicalAnalyzer(config.analysis)
-        self.fundamental_analyzer = FundamentalAnalyzer()
-        self.sentiment = SentimentAnalyzer()
-        self.composite = CompositeAnalyzer(config.analysis)
-
-        # LLM client (lazy-init, None if not configured)
+        # LLM client (lazy-init, None if provider not available)
         self.llm: Optional[BaseLLMClient] = None
         self._init_llm()
+
+        # LLM-powered analysis components (None when LLM unavailable)
+        self.llm_news: Optional[LLMNewsAnalyzer] = None
+        self.llm_thesis: Optional[ThesisGenerator] = None
+        self.llm_earnings: Optional[EarningsAnalyzer] = None
+        self.llm_risk: Optional[LLMRiskAssessor] = None
+        self._init_llm_analyzers()
+
+        # Analysis (wire LLM components in)
+        self.technical = TechnicalAnalyzer(config.analysis)
+        self.fundamental_analyzer = FundamentalAnalyzer()
+        self.sentiment = SentimentAnalyzer(llm_analyzer=self.llm_news)
+        self.composite = CompositeAnalyzer(config.analysis,
+                                           thesis_generator=self.llm_thesis)
 
         # Execution
         self.risk = RiskEngine(config.risk, self.broker)
@@ -125,6 +137,15 @@ class StockAgentAgent:
             )
         except Exception:
             self.llm = None  # Graceful fallback: agent works without LLM
+
+    def _init_llm_analyzers(self):
+        """Wire LLM client into analysis components (no-op if LLM unavailable)."""
+        if self.llm is None:
+            return
+        self.llm_news = LLMNewsAnalyzer(self.llm)
+        self.llm_thesis = ThesisGenerator(self.llm)
+        self.llm_earnings = EarningsAnalyzer(self.llm)
+        self.llm_risk = LLMRiskAssessor(self.llm)
 
     def get_llm(self) -> Optional[BaseLLMClient]:
         """Get LLM client, or None if not available."""

@@ -8,12 +8,15 @@ This is the main analysis interface that the rest of the system uses.
 """
 
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 from ..technical.technical import TechnicalSignal
 from ..fundamental.fundamental import FundamentalSignal
 from ..sentiment.sentiment import SentimentSignal
+
+if TYPE_CHECKING:
+    from analysis.llm.thesis_generator import ThesisGenerator, InvestmentThesis
 
 
 @dataclass
@@ -37,6 +40,9 @@ class CompositeSignal:
     recommendation: str = ""
     risk_level: str = ""          # "low", "medium", "high"
     timestamp: float = field(default_factory=time.time)
+
+    # Optional LLM-generated thesis (None if LLM not configured)
+    thesis: Optional["InvestmentThesis"] = None
     
     def to_dict(self) -> dict:
         d = {
@@ -56,6 +62,8 @@ class CompositeSignal:
             d["fundamental"] = self.fundamental.to_dict()
         if self.sentiment:
             d["sentiment"] = self.sentiment.to_dict()
+        if self.thesis:
+            d["thesis"] = self.thesis.to_dict()
         return d
 
 
@@ -77,7 +85,8 @@ class CompositeAnalyzer:
         print(signal.recommendation)   # "Moderate BUY — Strong technicals..."
     """
     
-    def __init__(self, config=None):
+    def __init__(self, config=None,
+                 thesis_generator: "Optional[ThesisGenerator]" = None):
         if config:
             self.w_technical = config.weight_technical
             self.w_fundamental = config.weight_fundamental
@@ -96,6 +105,8 @@ class CompositeAnalyzer:
             self.buy = 0.4
             self.sell = -0.4
             self.strong_sell = -0.7
+
+        self._thesis_gen = thesis_generator
     
     def analyze(self, ticker: str,
                 technical: TechnicalSignal = None,
@@ -175,7 +186,7 @@ class CompositeAnalyzer:
             technical, fundamental, sentiment
         )
         
-        return CompositeSignal(
+        result = CompositeSignal(
             ticker=ticker,
             composite_score=round(composite, 3),
             signal=signal,
@@ -188,6 +199,24 @@ class CompositeAnalyzer:
             recommendation=recommendation,
             risk_level=risk_level,
         )
+
+        # Optional: generate LLM investment thesis
+        if self._thesis_gen is not None:
+            try:
+                price = None
+                if technical and technical.indicators:
+                    price = technical.indicators.get("current_price")
+                result.thesis = self._thesis_gen.generate(
+                    ticker=ticker,
+                    technical_signal=technical,
+                    fundamental_signal=fundamental,
+                    sentiment_signal=sentiment,
+                    price=price,
+                )
+            except Exception as e:
+                print(f"[CompositeAnalyzer] Thesis generation failed for {ticker}: {e}")
+
+        return result
     
     def _assess_risk(self, technical, fundamental, sentiment) -> str:
         """Assess overall risk level of the position."""
