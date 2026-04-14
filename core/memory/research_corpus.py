@@ -117,26 +117,12 @@ class ResearchCorpus:
                 )
             """)
             
-            # FTS5 virtual table for full-text search
+            # FTS5 virtual table for full-text search (self-contained, no external content).
+            # Content is stored in files; FTS indexes title + summary + snippet of content.
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
-                    title, summary, content, tickers, sectors, tags,
-                    content='documents',
-                    content_rowid='id'
+                    title, summary, content, tickers, sectors, tags
                 )
-            """)
-            
-            # Triggers to keep FTS in sync
-            conn.executescript("""
-                CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
-                    INSERT INTO documents_fts(rowid, title, summary, content, tickers, sectors, tags)
-                    VALUES (new.id, new.title, new.summary, '', new.tickers, new.sectors, new.tags);
-                END;
-                
-                CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN
-                    INSERT INTO documents_fts(documents_fts, rowid, title, summary, content, tickers, sectors, tags)
-                    VALUES ('delete', old.id, old.title, old.summary, '', old.tickers, old.sectors, old.tags);
-                END;
             """)
             
             conn.execute("""
@@ -184,11 +170,14 @@ class ResearchCorpus:
             )
             conn.commit()
             
-            # Update FTS with actual content
+            # Index in FTS5 (content snippet for search; full text in file)
             doc_id = cursor.lastrowid
             conn.execute(
-                "UPDATE documents_fts SET content = ? WHERE rowid = ?",
-                (doc.content, doc_id)
+                """INSERT INTO documents_fts(rowid, title, summary, content, tickers, sectors, tags)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (doc_id, doc.title, doc.summary, doc.content[:4000],
+                 json.dumps(doc.tickers), json.dumps(doc.sectors),
+                 json.dumps(doc.tags))
             )
             conn.commit()
             
@@ -336,11 +325,20 @@ class ResearchCorpus:
         }
     
     def _row_to_doc(self, row) -> ResearchDoc:
-        """Convert a database row to a ResearchDoc."""
-        # Read content from file
-        content_path = Path(row[12])  # content_path column
-        content = content_path.read_text() if content_path.exists() else "[content lost]"
-        
+        """Convert a database row to a ResearchDoc.
+
+        Column order (matches CREATE TABLE):
+        0:id, 1:title, 2:content_hash, 3:doc_type, 4:tickers, 5:sectors,
+        6:source, 7:url, 8:published_at, 9:ingested_at, 10:summary, 11:tags,
+        12:relevance_score, 13:content_path, 14:archived
+        """
+        content_path_val = row[13]  # content_path
+        if content_path_val:
+            content_path = Path(str(content_path_val))
+            content = content_path.read_text(encoding="utf-8") if content_path.exists() else "[content lost]"
+        else:
+            content = "[content lost]"
+
         doc = ResearchDoc(
             title=row[1],
             content=content,
@@ -353,7 +351,7 @@ class ResearchCorpus:
             ingested_at=row[9],
             summary=row[10],
             tags=json.loads(row[11]),
-            relevance_score=row[13],
+            relevance_score=float(row[12]) if row[12] is not None else 0.0,
         )
         doc._id = row[0]  # Store ID for updates
         return doc
