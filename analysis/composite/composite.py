@@ -17,6 +17,7 @@ from ..sentiment.sentiment import SentimentSignal
 
 if TYPE_CHECKING:
     from analysis.llm.thesis_generator import ThesisGenerator, InvestmentThesis
+    from analysis.llm.debate_engine import DebateEngine, DebateResult
 
 
 @dataclass
@@ -43,6 +44,9 @@ class CompositeSignal:
 
     # Optional LLM-generated thesis (None if LLM not configured)
     thesis: Optional["InvestmentThesis"] = None
+
+    # Optional Bull/Bear debate result (None if debate engine not configured)
+    debate: Optional["DebateResult"] = None
     
     def to_dict(self) -> dict:
         d = {
@@ -64,6 +68,8 @@ class CompositeSignal:
             d["sentiment"] = self.sentiment.to_dict()
         if self.thesis:
             d["thesis"] = self.thesis.to_dict()
+        if self.debate:
+            d["debate"] = self.debate.to_dict()
         return d
 
 
@@ -86,7 +92,8 @@ class CompositeAnalyzer:
     """
     
     def __init__(self, config=None,
-                 thesis_generator: "Optional[ThesisGenerator]" = None):
+                 thesis_generator: "Optional[ThesisGenerator]" = None,
+                 debate_engine: "Optional[DebateEngine]" = None):
         if config:
             self.w_technical = config.weight_technical
             self.w_fundamental = config.weight_fundamental
@@ -107,6 +114,7 @@ class CompositeAnalyzer:
             self.strong_sell = -0.7
 
         self._thesis_gen = thesis_generator
+        self._debate_engine = debate_engine
     
     def analyze(self, ticker: str,
                 technical: TechnicalSignal = None,
@@ -200,12 +208,13 @@ class CompositeAnalyzer:
             risk_level=risk_level,
         )
 
+        price = None
+        if technical and technical.indicators:
+            price = technical.indicators.get("current_price")
+
         # Optional: generate LLM investment thesis
         if self._thesis_gen is not None:
             try:
-                price = None
-                if technical and technical.indicators:
-                    price = technical.indicators.get("current_price")
                 result.thesis = self._thesis_gen.generate(
                     ticker=ticker,
                     technical_signal=technical,
@@ -215,6 +224,26 @@ class CompositeAnalyzer:
                 )
             except Exception as e:
                 print(f"[CompositeAnalyzer] Thesis generation failed for {ticker}: {e}")
+
+        # Optional: run Bull/Bear debate (overrides thesis signal when conviction is higher)
+        if self._debate_engine is not None:
+            try:
+                debate = self._debate_engine.debate(
+                    ticker=ticker,
+                    technical_signal=technical,
+                    fundamental_signal=fundamental,
+                    sentiment_signal=sentiment,
+                    price=price,
+                )
+                if debate is not None:
+                    result.debate = debate
+                    # When the debate conviction is high, let it adjust the composite signal
+                    if debate.final_conviction >= 0.65:
+                        result.signal = debate.final_signal
+                        result.confidence = min(1.0, result.confidence * 0.5
+                                                + debate.final_conviction * 0.5)
+            except Exception as e:
+                print(f"[CompositeAnalyzer] Debate failed for {ticker}: {e}")
 
         return result
     

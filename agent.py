@@ -54,6 +54,7 @@ from analysis.llm.news_analyzer import LLMNewsAnalyzer
 from analysis.llm.thesis_generator import ThesisGenerator
 from analysis.llm.earnings_analyzer import EarningsAnalyzer
 from analysis.llm.risk_assessor import LLMRiskAssessor
+from analysis.llm.debate_engine import DebateEngine
 from execution.risk_engine import RiskEngine
 from execution.executor import TradeExecutor
 from push.notifier import Notifier, Notification
@@ -101,6 +102,7 @@ class StockAgentAgent:
         self.llm_thesis: Optional[ThesisGenerator] = None
         self.llm_earnings: Optional[EarningsAnalyzer] = None
         self.llm_risk: Optional[LLMRiskAssessor] = None
+        self.llm_debate: Optional[DebateEngine] = None
         self._init_llm_analyzers()
 
         # Analysis (wire LLM components in)
@@ -108,7 +110,8 @@ class StockAgentAgent:
         self.fundamental_analyzer = FundamentalAnalyzer()
         self.sentiment = SentimentAnalyzer(llm_analyzer=self.llm_news)
         self.composite = CompositeAnalyzer(config.analysis,
-                                           thesis_generator=self.llm_thesis)
+                                           thesis_generator=self.llm_thesis,
+                                           debate_engine=self.llm_debate)
 
         # Execution
         self.risk = RiskEngine(config.risk, self.broker)
@@ -146,6 +149,7 @@ class StockAgentAgent:
         self.llm_thesis = ThesisGenerator(self.llm)
         self.llm_earnings = EarningsAnalyzer(self.llm)
         self.llm_risk = LLMRiskAssessor(self.llm)
+        self.llm_debate = DebateEngine(self.llm)
 
     def get_llm(self) -> Optional[BaseLLMClient]:
         """Get LLM client, or None if not available."""
