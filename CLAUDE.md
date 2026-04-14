@@ -34,7 +34,7 @@ python cli.py review --days 7
 python cli.py research "AI semiconductors"
 ```
 
-There is no test suite or linter configured yet.
+Test suite: `pytest --tb=short -q` (337 tests, all passing). Config in `pyproject.toml` under `[tool.pytest.ini_options]`.
 
 ## Architecture
 
@@ -115,6 +115,14 @@ This repo uses a two-remote setup (see `REPO_STRUCTURE.md`):
 - `dev` - private notes, design process, experiments. Private repo only.
 
 **Critical:** `docs/` under the `dev` branch contains private content. **Never sync `docs/` to `main`** when merging or cherry-picking from `dev`.
+
+## Development workflow
+
+After completing each implementation phase:
+
+1. **Update the roadmap** — `docs/RESUME_AND_ROADMAP.md`: mark completed items with ✅, update test count, update "当前进度" and "待完成" sections.
+2. **Commit** — include all changed files in a single commit with a descriptive message.
+3. **Sync repos** — push to remotes per branch policy below.
 
 ## Key design constraints
 
