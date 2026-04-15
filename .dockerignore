@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.git/
+.github/
+.claude/
+*.egg-info/
+dist/
+build/
+docs/
+tests/
+data/market_data/
+data/backtest_cache/
+reports/
+*.md
+!README.md

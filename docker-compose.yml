@@ -1,0 +1,78 @@
+# StockAgent — Docker Compose
+# ============================
+#
+# Usage:
+#   docker compose run --rm stockagent status
+#   docker compose run --rm stockagent analyze AAPL
+#   docker compose run --rm stockagent analyze AAPL --agents
+#   docker compose up -d daemon            # start scheduled daemon
+#   docker compose logs -f daemon          # follow daemon logs
+#   docker compose down                    # stop all services
+
+services:
+  # ---------------------------------------------------------------------------
+  # stockagent — run any CLI command interactively
+  # ---------------------------------------------------------------------------
+  stockagent:
+    build:
+      context: .
+      # Optional: set EXTRAS=viz to include matplotlib/numpy
+      args:
+        EXTRAS: "${STOCKAGENT_DOCKER_EXTRAS:-}"
+    image: stockagent:latest
+    volumes:
+      # Persist SQLite databases and simulation state across container restarts
+      - ./data:/app/data
+      # Optional: mount custom config to override config.yaml
+      # - ./config.yaml:/app/config.yaml:ro
+    environment:
+      # Trading mode (default: simulated — safe, no real money)
+      STOCKAGENT_TRADING_MODE: "${STOCKAGENT_TRADING_MODE:-simulated}"
+      # LLM provider settings (leave blank to run without LLM)
+      STOCKAGENT_LLM_PROVIDER: "${STOCKAGENT_LLM_PROVIDER:-}"
+      STOCKAGENT_LLM_MODEL: "${STOCKAGENT_LLM_MODEL:-}"
+      # LLM API keys (set in .env file — never commit to git)
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      # Optional: IBKR connection (for paper/live mode)
+      STOCKAGENT_IBKR_HOST: "${STOCKAGENT_IBKR_HOST:-127.0.0.1}"
+      STOCKAGENT_IBKR_PORT: "${STOCKAGENT_IBKR_PORT:-7497}"
+      # Optional: notifications
+      STOCKAGENT_FEISHU_WEBHOOK: "${STOCKAGENT_FEISHU_WEBHOOK:-}"
+      STOCKAGENT_TELEGRAM_TOKEN: "${STOCKAGENT_TELEGRAM_TOKEN:-}"
+      STOCKAGENT_TELEGRAM_CHAT_ID: "${STOCKAGENT_TELEGRAM_CHAT_ID:-}"
+    env_file:
+      - path: .env
+        required: false
+    # Run one-off commands (not a long-running service)
+    profiles:
+      - cli
+
+  # ---------------------------------------------------------------------------
+  # daemon — long-running scheduled service
+  #   Runs premarket (9am), intraday (every 30min), postmarket (4:30pm) US/Eastern
+  # ---------------------------------------------------------------------------
+  daemon:
+    build:
+      context: .
+      args:
+        EXTRAS: "${STOCKAGENT_DOCKER_EXTRAS:-}"
+    image: stockagent:latest
+    command: ["daemon"]
+    volumes:
+      - ./data:/app/data
+    environment:
+      STOCKAGENT_TRADING_MODE: "${STOCKAGENT_TRADING_MODE:-simulated}"
+      STOCKAGENT_LLM_PROVIDER: "${STOCKAGENT_LLM_PROVIDER:-}"
+      STOCKAGENT_LLM_MODEL: "${STOCKAGENT_LLM_MODEL:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      STOCKAGENT_FEISHU_WEBHOOK: "${STOCKAGENT_FEISHU_WEBHOOK:-}"
+      STOCKAGENT_TELEGRAM_TOKEN: "${STOCKAGENT_TELEGRAM_TOKEN:-}"
+      STOCKAGENT_TELEGRAM_CHAT_ID: "${STOCKAGENT_TELEGRAM_CHAT_ID:-}"
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
