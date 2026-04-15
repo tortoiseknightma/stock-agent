@@ -16,6 +16,7 @@ Commands:
     intraday    Run intraday check
     postmarket  Run post-market routine
     daemon      Run as scheduled daemon
+    backtest    Run strategy backtest on historical data
 """
 
 import sys
@@ -110,13 +111,34 @@ Examples:
     # daemon
     p_daemon = subparsers.add_parser("daemon", help="Run as scheduled daemon")
     p_daemon.add_argument("--once", action="store_true", help="Run once then exit")
-    
+
+    # backtest
+    p_bt = subparsers.add_parser(
+        "backtest", help="Run strategy backtest on historical data"
+    )
+    p_bt.add_argument("--ticker", default="AAPL", help="Ticker symbol (default: AAPL)")
+    p_bt.add_argument("--start", required=True, help="Start date YYYY-MM-DD")
+    p_bt.add_argument("--end", required=True, help="End date YYYY-MM-DD")
+    p_bt.add_argument("--capital", type=float, default=100_000.0,
+                      help="Initial capital (default: 100000)")
+    p_bt.add_argument("--slippage", type=float, default=0.001,
+                      help="Slippage fraction (default: 0.001)")
+    p_bt.add_argument("--buy-threshold", type=float, default=0.4,
+                      help="Composite score to trigger buy (default: 0.4)")
+    p_bt.add_argument("--sell-threshold", type=float, default=-0.4,
+                      help="Composite score to trigger sell (default: -0.4)")
+
     args = parser.parse_args()
     
     if not args.command:
         parser.print_help()
         return
     
+    # backtest runs without the full agent stack (no LLM keys required)
+    if args.command == "backtest":
+        cmd_backtest(args)
+        return
+
     # Load agent
     try:
         agent = StockAgentAgent.from_config("config.yaml")
@@ -124,7 +146,7 @@ Examples:
         print(f"Error loading config: {e}")
         print("Make sure config.yaml exists in the current directory.")
         return
-    
+
     # Execute command
     if args.command == "status":
         cmd_status(agent)
@@ -396,6 +418,32 @@ def cmd_daemon(agent: StockAgentAgent, args):
     except KeyboardInterrupt:
         print("\nDaemon stopped.")
         agent.disconnect()
+
+
+def cmd_backtest(args):
+    """Run strategy backtest on historical data. Does not require LLM API keys."""
+    from backtest.engine import BacktestEngine, BacktestConfig
+    from backtest.metrics import compute_metrics, format_report
+
+    cfg = BacktestConfig(
+        ticker=args.ticker.upper(),
+        start_date=args.start,
+        end_date=args.end,
+        initial_capital=args.capital,
+        slippage_pct=args.slippage,
+        buy_threshold=args.buy_threshold,
+        sell_threshold=args.sell_threshold,
+    )
+
+    engine = BacktestEngine(cfg)
+    result = engine.run()
+
+    if not result.daily_values:
+        print("No data returned — check the ticker and date range.")
+        return
+
+    metrics = compute_metrics(result)
+    print(format_report(metrics, result))
 
 
 if __name__ == "__main__":

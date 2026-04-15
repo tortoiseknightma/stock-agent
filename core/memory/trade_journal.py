@@ -177,10 +177,17 @@ class TradeJournal:
     """
     
     def __init__(self, db_path: str = "data/trade_journal.db"):
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._in_memory = (db_path == ":memory:")
+        if self._in_memory:
+            self.db_path = Path(":memory:")
+            # For in-memory mode, hold a persistent connection so the DB isn't lost
+            self._mem_conn = sqlite3.connect(":memory:")
+        else:
+            self.db_path = Path(db_path)
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._mem_conn = None
         self._init_db()
-    
+
     def _init_db(self):
         with self._conn() as conn:
             conn.execute("""
@@ -234,6 +241,8 @@ class TradeJournal:
             conn.commit()
     
     def _conn(self) -> sqlite3.Connection:
+        if self._in_memory:
+            return self._mem_conn
         return sqlite3.connect(str(self.db_path))
     
     def record_decision(self, decision: DecisionRecord) -> int:
