@@ -27,7 +27,7 @@ dev = ["pytest>=7.0", "pytest-cov>=4.0"]
 stockagent = "cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["agents", "analysis", "backtest", "core", "data", "execution", "push"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
