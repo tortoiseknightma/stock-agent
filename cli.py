@@ -63,6 +63,8 @@ Examples:
     p = subparsers.add_parser("analyze", help="Run analysis")
     p.add_argument("ticker", nargs="?", help="Ticker to analyze (default: all)")
     p.add_argument("--execute", action="store_true", help="Execute top signals")
+    p.add_argument("--agents", action="store_true",
+                   help="Use multi-agent pipeline (12-agent system)")
     
     # buy
     p = subparsers.add_parser("buy", help="Execute buy order")
@@ -212,7 +214,23 @@ def cmd_status(agent: StockAgentAgent):
 def cmd_analyze(agent: StockAgentAgent, args):
     """Run analysis."""
     agent.connect()
-    
+
+    if getattr(args, "agents", False) and args.ticker:
+        # Multi-agent pipeline
+        print(f"\n[Multi-Agent] Analyzing {args.ticker}...")
+        state = agent.run_multi_agent_analysis(args.ticker)
+        signal_emoji = {"BUY": "🟢", "HOLD": "⚪", "SELL": "🔴"}.get(
+            state.decision_signal, "⚪"
+        )
+        print(f"\n  {signal_emoji} {args.ticker}: {state.decision_signal}")
+        print(f"  Conviction: {state.decision_conviction:.0%}")
+        if state.trade_proposal:
+            print(f"  Trade Proposal: {state.trade_proposal}")
+        if state.final_decision:
+            print(f"\n  Final Decision:\n  {state.final_decision[:500]}")
+        print(f"\n  Pipeline log: {len(state.agent_log)} agent actions")
+        return
+
     if args.ticker:
         # Single ticker
         print(f"\nAnalyzing {args.ticker}...")

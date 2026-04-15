@@ -112,6 +112,15 @@ class LLMConfig:
 
 
 @dataclass
+class AgentConfig:
+    """Multi-agent orchestration configuration."""
+    enabled: bool = False                    # Master toggle for multi-agent mode
+    fast_model: str = ""                     # Fast model for analysts/debators (empty = use main model)
+    max_debate_rounds: int = 1               # Bull/Bear alternation rounds
+    max_risk_discuss_rounds: int = 1         # Risk three-way debate rounds
+
+
+@dataclass
 class PushConfig:
     channels: list = field(default_factory=lambda: ["cli"])
     feishu_webhook: Optional[str] = None
@@ -131,6 +140,7 @@ class AppConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    agents: AgentConfig = field(default_factory=AgentConfig)
     push: PushConfig = field(default_factory=PushConfig)
     
     @classmethod
@@ -224,6 +234,7 @@ class AppConfig:
             scheduler=_dc_from_dict(SchedulerConfig, raw.get("scheduler")),
             memory=_dc_from_dict(MemoryConfig, raw.get("memory")),
             llm=_dc_from_dict(LLMConfig, raw.get("llm")),
+            agents=_dc_from_dict(AgentConfig, raw.get("agents")),
             push=_dc_from_dict(PushConfig, raw.get("push")),
         )
     

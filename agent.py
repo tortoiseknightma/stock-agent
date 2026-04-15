@@ -341,7 +341,58 @@ class StockAgentAgent:
     def analyze_single(self, ticker: str) -> CompositeSignal:
         """Analyze a single ticker (for CLI use)."""
         return self._analyze_ticker(ticker)
-    
+
+    def run_multi_agent_analysis(self, ticker: str):
+        """Run the 12-agent multi-agent pipeline and return AgentState."""
+        from agents.graph import TradingGraph
+        from agents.state import AgentState
+
+        fast_llm = self._create_fast_llm()
+        graph = TradingGraph(
+            self.config,
+            llm_client=self.llm,
+            fast_llm_client=fast_llm,
+            broker=self.broker,
+            market_data=self.market_data,
+            fundamentals=self.fundamentals,
+            news=self.news,
+        )
+        return graph.run(ticker)
+
+    def _create_fast_llm(self) -> Optional[BaseLLMClient]:
+        """Create fast LLM client from config.agents.fast_model (falls back to main LLM)."""
+        fast_model = self.config.agents.fast_model
+        if not fast_model:
+            return self.llm
+        try:
+            return create_llm_client(
+                provider=self.config.llm.provider,
+                model=fast_model,
+                base_url=self.config.llm.base_url,
+            )
+        except Exception:
+            return self.llm
+
+    def _state_to_composite(self, state) -> CompositeSignal:
+        """Bridge AgentState to CompositeSignal for use with RiskEngine/TradeExecutor."""
+        from analysis.composite.composite import CompositeSignal
+
+        signal_map = {"BUY": "buy", "SELL": "sell", "HOLD": "hold"}
+        signal = signal_map.get(state.decision_signal, "hold")
+        conviction = getattr(state, "decision_conviction", 0.5)
+
+        return CompositeSignal(
+            ticker=state.ticker,
+            signal=signal,
+            composite_score=conviction * (1 if signal != "sell" else -1),
+            confidence=conviction,
+            risk_level="medium",
+            recommendation=state.final_decision[:200] if state.final_decision else signal,
+            technical=state.technical_signal,
+            fundamental=state.fundamental_signal,
+            sentiment=state.sentiment_signal,
+        )
+
     # === Trading Actions ===
     
     def execute_buy(self, ticker: str, target_pct: float = None):
