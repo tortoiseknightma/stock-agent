@@ -201,7 +201,7 @@ def _sharpe(daily_returns: List[float], rf_daily: float) -> float:
     n = len(daily_returns)
     mean = sum(daily_returns) / n
     std = math.sqrt(sum((r - mean) ** 2 for r in daily_returns) / (n - 1))
-    if std == 0:
+    if std < 1e-15:  # handle floating-point imprecision
         return 0.0
     return (mean - rf_daily) / std * math.sqrt(_TRADING_DAYS_PER_YEAR)
 
