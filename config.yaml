@@ -84,3 +84,5 @@ llm:
   base_url: null            # Custom API endpoint (optional)
   temperature: 0.0
   max_tokens: 4096
+  reflection_enabled: true
+  reflection_max_lessons_per_trade: 3

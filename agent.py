@@ -55,6 +55,7 @@ from analysis.llm.thesis_generator import ThesisGenerator
 from analysis.llm.earnings_analyzer import EarningsAnalyzer
 from analysis.llm.risk_assessor import LLMRiskAssessor
 from analysis.llm.debate_engine import DebateEngine
+from analysis.llm.reflection_engine import ReflectionEngine
 from execution.risk_engine import RiskEngine
 from execution.executor import TradeExecutor
 from push.notifier import Notifier, Notification
@@ -103,6 +104,7 @@ class StockAgentAgent:
         self.llm_earnings: Optional[EarningsAnalyzer] = None
         self.llm_risk: Optional[LLMRiskAssessor] = None
         self.llm_debate: Optional[DebateEngine] = None
+        self.reflection_engine: Optional[ReflectionEngine] = None
         self._init_llm_analyzers()
 
         # Analysis (wire LLM components in)
@@ -150,6 +152,11 @@ class StockAgentAgent:
         self.llm_earnings = EarningsAnalyzer(self.llm)
         self.llm_risk = LLMRiskAssessor(self.llm)
         self.llm_debate = DebateEngine(self.llm)
+        if self.config.llm.reflection_enabled:
+            self.reflection_engine = ReflectionEngine(
+                self.llm, self.memory, self.journal,
+                max_lessons_per_trade=self.config.llm.reflection_max_lessons_per_trade,
+            )
 
     def get_llm(self) -> Optional[BaseLLMClient]:
         """Get LLM client, or None if not available."""
@@ -284,7 +291,16 @@ class StockAgentAgent:
         
         # Store daily analysis in research corpus
         self._store_daily_analysis(results)
-        
+
+        # Batch reflection: extract lessons from all today's sell trades
+        if self.reflection_engine:
+            try:
+                lessons = self.reflection_engine.reflect_batch(days=1)
+                if lessons:
+                    print(f"  Lessons learned today: {len(lessons)}")
+            except Exception:
+                pass
+
         # Print summary
         print(f"\nDaily Performance:")
         print(f"  Trades today: {review['trades']['total']}")
@@ -349,6 +365,16 @@ class StockAgentAgent:
             body=result.risk_check.reasoning,
             level="trade" if result.success else "warning"
         ))
+        # Real-time reflection: learn from this sell immediately
+        if result.success and self.reflection_engine:
+            try:
+                trades = self.journal.get_trades(ticker=ticker, side=None, limit=1)
+                if trades:
+                    lessons = self.reflection_engine.reflect_on_trade(trades[0]["id"])
+                    if lessons:
+                        print(f"  [Reflection] {len(lessons)} lesson(s) learned from {ticker} sell.")
+            except Exception:
+                pass  # Reflection must never block trading
         return result
     
     # === Memory Management ===

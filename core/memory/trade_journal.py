@@ -440,6 +440,49 @@ class TradeJournal:
             "accuracy": correct / max(total, 1),
         }
     
+    def get_trade_pair(self, sell_trade_id: int) -> Optional[Dict]:
+        """
+        Find the matching buy trade for a given sell trade.
+
+        Returns a dict with 'sell' and 'buy' keys, or None if no matching
+        buy trade is found. Used by the reflection engine to compute hold
+        duration and entry price.
+        """
+        with self._conn() as conn:
+            sell_row = conn.execute(
+                "SELECT * FROM trades WHERE id = ? AND side = 'sell'",
+                (sell_trade_id,)
+            ).fetchone()
+            if not sell_row:
+                return None
+
+            sell = self._row_to_trade_dict(sell_row)
+
+            # Find the most recent buy for the same ticker before this sell
+            buy_row = conn.execute(
+                """SELECT * FROM trades
+                   WHERE ticker = ? AND side = 'buy' AND timestamp < ?
+                   ORDER BY timestamp DESC LIMIT 1""",
+                (sell["ticker"], sell["timestamp"])
+            ).fetchone()
+
+        if not buy_row:
+            return None
+
+        return {"sell": sell, "buy": self._row_to_trade_dict(buy_row)}
+
+    def get_recent_sell_trades(self, days: int = 1) -> List[Dict]:
+        """Return all sell trades within the given number of days."""
+        return self.get_trades(side=OrderSide.SELL, days=days)
+
+    def get_decision_by_id(self, decision_id: int) -> Optional[Dict]:
+        """Fetch a single decision record by ID."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM decisions WHERE id = ?", (decision_id,)
+            ).fetchone()
+        return self._row_to_decision_dict(row) if row else None
+
     def get_stats(self) -> Dict[str, Any]:
         """Get journal statistics."""
         with self._conn() as conn:

@@ -107,6 +107,8 @@ class LLMConfig:
     base_url: Optional[str] = None   # Custom API endpoint
     temperature: float = 0.0
     max_tokens: int = 4096
+    reflection_enabled: bool = True          # Auto-learn lessons from completed trades
+    reflection_max_lessons_per_trade: int = 3  # Max lessons extracted per trade
 
 
 @dataclass
