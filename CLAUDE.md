@@ -120,7 +120,7 @@ This repo uses a two-remote setup (see `REPO_STRUCTURE.md`):
 
 After completing each implementation phase:
 
-1. **Update the roadmap** — `docs/RESUME_AND_ROADMAP.md`: mark completed items with ✅, update test count, update "当前进度" and "待完成" sections.
+1. **Update the roadmap** — `docs/ROADMAP.md`: mark completed items with ✅, update test count, update "当前进度" and "待完成" sections.
 2. **Commit** — include all changed files in a single commit with a descriptive message.
 3. **Sync repos** — push to remotes per branch policy below.
 
